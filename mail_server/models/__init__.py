@@ -18,13 +18,18 @@ class Campaign(BaseNameMixin, db.Model):
 
     organization_id = db.Column(None, db.ForeignKey('organization.id'), nullable=True)
     organization = db.relationship(Organization, backref=db.backref('campaigns', cascade='all, delete-orphan'))
+    contact_email = db.Column(db.Unicode(254), nullable=False, unique=True)
+
 
 class MailAccount(BaseMixin, db.Model):
     __tablename__ = 'mail_account'
+    __table_args__ = (db.UniqueConstraint('organization_id', 'friendly_id'),)
 
-    email = db.Column(db.Unicode(254), nullable=False, unique=True)
     organization_id = db.Column(None, db.ForeignKey('organization.id'), nullable=True)
     organization = db.relationship(Organization, backref=db.backref('accounts', cascade='all, delete-orphan'))
+
+    friendly_id = db.Column(db.Unicode(255), nullable=False)
+    email = db.Column(db.Unicode(254), nullable=False, unique=True)
  
 
 class Subscriber(BaseMixin, db.Model):
@@ -34,6 +39,7 @@ class Subscriber(BaseMixin, db.Model):
     organization = db.relationship(Organization, backref=db.backref('subscribers', cascade='all, delete-orphan'))
     email = db.Column(db.Unicode(254), nullable=False, unique=True)
     first_name = db.Column(db.Unicode(255), nullable=True)
+
 
 class Subscription(BaseMixin, db.Model):
     __tablename__ = 'subscription'
@@ -60,7 +66,22 @@ class MailMessage(BaseMixin, db.Model):
     __uuid_primary_key__ = True
 
     from_address = db.Column(db.Unicode(254), nullable=False)
-    headers = db.Column(JsonDict, nullable=False, default={})
-
+    headers = db.Column(db.UnicodeText(), nullable=False)
+    body = db.Column(db.UnicodeText(), nullable=True)
     thread_id = db.Column(None, db.ForeignKey('mail_thread.id'), nullable=False)
     thread = db.relationship(MailThread, backref=db.backref('messages', cascade='all, delete-orphan'))
+
+
+class RESPONDER_FREQUENCY(LabeledEnum):
+    FIRST_TIME = (0, __("First time"))
+    EVERY_TIME = (1, __("Every time"))
+
+
+class AutoResponder(BaseMixin, db.Model):
+    __tablename__ = 'auto_responder'
+
+    campaign_id = db.Column(None, db.ForeignKey('campaign.id'), nullable=False)
+    campaign = db.relationship(Campaign, backref=db.backref('responders', cascade='all, delete-orphan'))
+    subject = db.Column(db.Unicode(255), nullable=False)
+    template = db.Column(db.UnicodeText(), nullable=True)
+    frequency = db.Column(db.Integer, default=RESPONDER_FREQUENCY.FIRST_TIME, nullable=False)

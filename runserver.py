@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import sys
-from hgapp import app
+from mail_server import app
 
 try:
     port = int(sys.argv[1])
