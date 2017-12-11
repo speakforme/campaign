@@ -4,8 +4,6 @@ from flask import request, abort, url_for
 import os
 import json
 from coaster.views import load_models
-import sendgrid
-from sendgrid.helpers.mail import Email, Content, Mail
 import requests
 from mail_server import app
 from . import index
