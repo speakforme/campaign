@@ -5,10 +5,10 @@ import os
 import json
 from coaster.views import load_models
 import requests
-from mail_server import app
+from campaign import app
 from . import index
-from mail_server.models import db, IncomingMessage, OutgoingMessage, Subscriber, Subscription, Campaign, AutoResponder, RESPONDER_FREQUENCY
-from mail_server.extapi.ses import AmazonSES, EmailMessage
+from campaign.models import db, IncomingMessage, OutgoingMessage, Subscriber, Subscription, Campaign, AutoResponder, RESPONDER_FREQUENCY
+from campaign.extapi.ses import AmazonSES, EmailMessage
 
 
 class SES(object):
