@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from flask import request, abort
+from flask import request, abort, url_for
 import os
 import json
 from coaster.views import load_models
@@ -8,9 +8,22 @@ import sendgrid
 from sendgrid.helpers.mail import Email, Content, Mail
 import requests
 from mail_server import app
-from . import index, login
-from mail_server.models import db, Organization, MailAccount, MailThread, MailMessage, Subscriber, Subscription, Campaign, AutoResponder, RESPONDER_FREQUENCY
+from . import index
+from mail_server.models import db, IncomingMessage, OutgoingMessage, Subscriber, Subscription, Campaign, AutoResponder, RESPONDER_FREQUENCY
+from mail_server.extapi.ses import AmazonSES, EmailMessage
 
+
+class SES(object):
+    def send(self, options):
+        amazonSes = AmazonSES(app.config['AWS_KEY_ID'], app.config['AWS_KEY'])
+        message = EmailMessage()
+        message.subject = options['subject']
+        message.bodyText = options['body']
+        result = amazonSes.sendEmail(options['from'], options['to'], message)
+        return {
+            'message_id': result.messageId
+        }
+        
 
 class Postal(object):
     def __init__(self, key, base_url):
@@ -19,16 +32,14 @@ class Postal(object):
 
     def receive(self, request):
         email = json.loads(request.data)
-        # TODO: store the name in email['from']
-        # TODO: what if to is a list?
-        # TODO: how do we store the other headers?
         return {
             'from_address': email['mail_from'],
-            'to_address': email['to'],
+            'to_address': email['rcpt_to'],
             'subject': email['subject'],
             'body': email['plain_body'],
             'body_html': email['html_body'],
-            'headers': ""
+            'headers': "",
+            'message_id': email['message_id']
         }
 
     def send(self, options):
@@ -47,79 +58,69 @@ class Postal(object):
             'X-Server-API-Key': "{key}".format(key=self.key),
             'content-type': "application/json"
         }
-        return requests.post(url, data=payload, headers=headers)
-
-
-class SendGrid(object):
-    def receive(self, request):
-        email = request.form.to_dict()
-        envelope = json.loads(email['envelope'])
+        resp = requests.post(url, data=payload, headers=headers)
         return {
-            'from_address': envelope['from'],
-            'to_address': envelope['to'][0],
-            'subject': email['subject'],
-            'body': email['text'],
-            'body_html': email['html'],
-            'headers': email['headers']
+            'message_id': resp.messageId
         }
 
-    def send(self, options):
-        sg = sendgrid.SendGridAPIClient(apikey=app.config.get('SENDGRID_API_KEY'))
-        from_email = Email(options['from'])
-        to_email = Email(options['to'])
-        subject = options['subject']
-        content = Content("text/plain", options['body'])
-        mail = Mail(from_email, subject, to_email, content)
-        return sg.client.mail.send.post(request_body=mail.get())
+
+def extract_campaign_name(email):
+    return email.split('@')[0].split('-')[0]
 
 
-def extract_campaign_account(email):
-    return email.split('@')[0].split('-')
-
-@app.route('/api/1/<org>/inbox', methods=['POST'])
-@load_models(
-    (Organization, {'name': 'org'}, 'org')
-    )
-def inbox(org):
+@app.route('/api/1/inbox', methods=['POST'])
+def inbox():
     mail_provider = Postal(key=app.config['POSTAL_API_KEY'], base_url=app.config['POSTAL_BASE_URL'])
     parsed_email = mail_provider.receive(request)
 
-    campaign_name, account_friendly_id = extract_campaign_account(parsed_email['to_address'])
-    if campaign_name and account_friendly_id:
-        campaign = Campaign.query.filter(Campaign.organization == org, Campaign.name == campaign_name).first()
-        account = MailAccount.query.filter(MailAccount.organization == org, MailAccount.friendly_id == account_friendly_id).first()
-
-        # TODO: Check reply-to
-        thread = MailThread(account=account, subject=parsed_email['subject'])
-        db.session.add(thread)
-        msg = MailMessage(thread=thread, from_address=parsed_email['from_address'],
+    campaign_name = extract_campaign_name(parsed_email['to_address'])
+    campaign = Campaign.query.filter(Campaign.name == campaign_name).first()
+    if campaign:
+        msg = IncomingMessage(campaign=campaign,
+            from_address=parsed_email['from_address'],
+            subject=parsed_email['subject'],
+            to_address=parsed_email['to_address'],
+            messageid=parsed_email['message_id'],
             body=parsed_email['body'],
             headers=parsed_email['headers'])
         db.session.add(msg)
 
-        subscriber = Subscriber.query.filter(Subscriber.organization == org,
-            Subscriber.email == parsed_email['from_address']).first()
+        subscriber = Subscriber.query.filter(Subscriber.email == parsed_email['from_address']).first()
         if not subscriber:
-            subscriber = Subscriber(email=parsed_email['from_address'], organization=org)
+            subscriber = Subscriber(email=parsed_email['from_address'])
             db.session.add(subscriber)
             subscription = Subscription(subscriber=subscriber, campaign=campaign)
             db.session.add(subscription)
+            
+            mail_sender = SES()
             responders = AutoResponder.query.filter(AutoResponder.campaign == campaign,
                 AutoResponder.frequency == RESPONDER_FREQUENCY.FIRST_TIME).all()
             for responder in responders:
-                mail_provider.send({
+                outgoing_body = responder.get_template(msg.body).body
+                outgoing_body += "\n\n\n\n To unsubscribe from this campaign, please click here - {link}".format(
+                    link=url_for('unsubscribe', token=subscription.token, _external=True))
+                sent_details = mail_sender.send({
                     'from': campaign.contact_email,
                     'to': subscriber.email,
                     'subject': responder.subject,
-                    'body': responder.template})
+                    'body': outgoing_body})
+                sent_msg = OutgoingMessage(
+                    to_addresses=[subscriber.email],
+                    subject=responder.subject,
+                    campaign=campaign,
+                    messageid=sent_details['message_id'])
+                db.session.add(sent_msg)
         db.session.commit()
         return "OK"
     abort(401)
 
 
-@app.route('/api/1/<org>/inbox', methods=['POST'])
+@app.route('/api/1/subscription/<token>/unsubscribe')
 @load_models(
-    (Organization, {'name': 'org'}, 'org')
+    (Subscription, {'token': 'token'}, 'subscription')
     )
-def unsubscribe(org):
-    pass
+def unsubscribe(subscription):
+    if subscription.active:
+        subscription.active = False
+    db.session.commit()
+    return "You have been unsubscibed from `{campaign}` campaign.".format(campaign=subscription.campaign.title)
