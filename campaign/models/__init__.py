@@ -12,7 +12,7 @@ class Campaign(BaseNameMixin, db.Model):
     __tablename__ = 'campaign'
     __uuid_primary_key__ = True
 
-    contact_email = db.Column(db.Unicode(254), nullable=False, unique=True)
+    contact_email = db.Column(db.Unicode(254), nullable=False)
 
 
 class Subscriber(BaseMixin, db.Model):
