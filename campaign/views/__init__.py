@@ -87,26 +87,32 @@ def inbox():
         if not subscriber:
             subscriber = Subscriber(email=parsed_email['from_address'])
             db.session.add(subscriber)
+
+        subscription = Subscription.query.filter(Subscription.subscriber == subscriber, Subscription.campaign == campaign).first()
+        if not subscription:
             subscription = Subscription(subscriber=subscriber, campaign=campaign)
             db.session.add(subscription)
-            
-            mail_sender = SES()
-            responders = AutoResponder.query.filter(AutoResponder.campaign == campaign,
-                AutoResponder.frequency == RESPONDER_FREQUENCY.FIRST_TIME).all()
-            for responder in responders:
-                outgoing_body = responder.get_template(msg.body).body.format(unsubscribe=url_for('unsubscribe', token=subscription.token, _external=True))
-                response_subject = u"Re: {sub}".format(sub=msg.subject)
-                sent_details = mail_sender.send({
-                    'from': campaign.contact_email,
-                    'to': subscriber.email,
-                    'subject': response_subject,
-                    'body': outgoing_body})
-                sent_msg = OutgoingMessage(
-                    to_addresses=[subscriber.email],
-                    subject=response_subject,
-                    campaign=campaign,
-                    messageid=sent_details['message_id'])
-                db.session.add(sent_msg)
+        else:
+            if not subscription.active:
+                subscription.active = True
+
+        mail_sender = SES()
+        responders = AutoResponder.query.filter(AutoResponder.campaign == campaign,
+            AutoResponder.frequency == RESPONDER_FREQUENCY.FIRST_TIME).all()
+        for responder in responders:
+            outgoing_body = responder.get_template(msg.body).body.format(unsubscribe=url_for('unsubscribe', token=subscription.token, _external=True))
+            response_subject = u"Re: {sub}".format(sub=msg.subject)
+            sent_details = mail_sender.send({
+                'from': campaign.contact_email,
+                'to': subscriber.email,
+                'subject': response_subject,
+                'body': outgoing_body})
+            sent_msg = OutgoingMessage(
+                to_addresses=[subscriber.email],
+                subject=response_subject,
+                campaign=campaign,
+                messageid=sent_details['message_id'])
+            db.session.add(sent_msg)
         db.session.commit()
         return "OK"
     abort(401)
@@ -120,4 +126,7 @@ def unsubscribe(subscription):
     if subscription.active:
         subscription.active = False
     db.session.commit()
+    campaign = subscription.campaign
+    if campaign.unsubscribe_msg:
+        return campaign.unsubscribe_msg
     return "You have been unsubscibed from `{campaign}` campaign.".format(campaign=subscription.campaign.title)

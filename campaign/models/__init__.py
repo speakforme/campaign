@@ -13,6 +13,7 @@ class Campaign(BaseNameMixin, db.Model):
     __uuid_primary_key__ = True
 
     contact_email = db.Column(db.Unicode(254), nullable=False)
+    unsubscribe_msg = db.Column(db.UnicodeText(), nullable=True)
 
 
 class Subscriber(BaseMixin, db.Model):
