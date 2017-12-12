@@ -95,14 +95,15 @@ def inbox():
                 AutoResponder.frequency == RESPONDER_FREQUENCY.FIRST_TIME).all()
             for responder in responders:
                 outgoing_body = responder.get_template(msg.body).body.format(unsubscribe=url_for('unsubscribe', token=subscription.token, _external=True))
+                response_subject = u"Re: {sub}".format(sub=msg.subject)
                 sent_details = mail_sender.send({
                     'from': campaign.contact_email,
                     'to': subscriber.email,
-                    'subject': responder.subject,
+                    'subject': response_subject,
                     'body': outgoing_body})
                 sent_msg = OutgoingMessage(
                     to_addresses=[subscriber.email],
-                    subject=responder.subject,
+                    subject=response_subject,
                     campaign=campaign,
                     messageid=sent_details['message_id'])
                 db.session.add(sent_msg)
