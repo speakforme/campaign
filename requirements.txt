@@ -5,3 +5,4 @@ Flask-Migrate
 https://github.com/hasgeek/coaster/archive/master.zip
 https://github.com/hasgeek/baseframe/archive/master.zip
 langid
+rq
