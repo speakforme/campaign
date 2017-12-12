@@ -11,7 +11,7 @@ from rq import Queue
 from campaign.models import db, IncomingMessage, OutgoingMessage, Subscriber, Subscription, Campaign, AutoResponder, RESPONDER_FREQUENCY
 from campaign.extapi.ses import AmazonSES, EmailMessage
 
-queue = Queue(connection=Redis())
+queue = Queue('campaign', connection=Redis())
 
 class SES(object):
     def send(self, options):
