@@ -94,9 +94,7 @@ def inbox():
             responders = AutoResponder.query.filter(AutoResponder.campaign == campaign,
                 AutoResponder.frequency == RESPONDER_FREQUENCY.FIRST_TIME).all()
             for responder in responders:
-                outgoing_body = responder.get_template(msg.body).body
-                outgoing_body += "\n\n\n\n To unsubscribe from this campaign, please click here - {link}".format(
-                    link=url_for('unsubscribe', token=subscription.token, _external=True))
+                outgoing_body = responder.get_template(msg.body).body.format(unsubscribe=url_for('unsubscribe', token=subscription.token, _external=True))
                 sent_details = mail_sender.send({
                     'from': campaign.contact_email,
                     'to': subscriber.email,
