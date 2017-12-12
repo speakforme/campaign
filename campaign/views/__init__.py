@@ -112,7 +112,7 @@ def inbox():
     abort(401)
 
 
-@app.route('/api/1/subscription/<token>/unsubscribe')
+@app.route('/subscription/<token>/unsubscribe')
 @load_models(
     (Subscription, {'token': 'token'}, 'subscription')
     )
