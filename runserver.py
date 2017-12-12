@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import sys
-from mail_server import app
+from campaign import app
 
 try:
     port = int(sys.argv[1])
