@@ -78,9 +78,9 @@ class AutoResponder(BaseMixin, db.Model):
 
     def get_template(self, txt):
         lang_code, score = langid.classify(txt)
-        template = ResponseTemplate.query.filter(ResponseTemplate.lang_code == lang_code).first()
+        template = ResponseTemplate.query.filter(ResponseTemplate.lang_code == lang_code, ResponseTemplate.auto_responder == self).first()
         if not template:
-            template = ResponseTemplate.query.filter(ResponseTemplate.lang_code == 'en').first()
+            template = ResponseTemplate.query.filter(ResponseTemplate.lang_code == 'en', ResponseTemplate.auto_responder == self).first()
         return template
 
 
