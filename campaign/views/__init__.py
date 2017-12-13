@@ -93,6 +93,11 @@ def check_api_access(source, claim):
         abort(401)
 
 
+@app.route('/')
+def index():
+    return "<a href='https://speakforme.in'>Speak For Me</a>"
+
+
 @app.route('/api/1/inbox/<api_token>', methods=['POST'])
 def inbox(api_token):
     check_api_access(app.config['API_TOKEN'], api_token)
