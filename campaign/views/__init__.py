@@ -116,7 +116,7 @@ def unsubscribe(subscription):
 @app.route('/api/1/subscribers')
 @requires_auth
 def subscribers():
-    subs = Subscriber.query.join(Subscription).filter(Subscription.active is True)
+    subs = Subscriber.query.join(Subscription).filter(Subscription.active == True)
     headers = ['email']
     rows = []
     for sub in subs:
