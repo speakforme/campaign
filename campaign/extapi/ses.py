@@ -26,6 +26,7 @@ import logging
 import base64
 from datetime import datetime
 from xml.etree.ElementTree import XML
+from campaign import app
 
 log = logging.getLogger(__name__)
 
@@ -273,3 +274,14 @@ class AmazonResponseParser:
             else:
                 raise AmazonAPIError('Action %s is not supported. Please contact: vladimir@tagmask.com' % (actionName,))
         return result
+
+class SES(object):
+    def send(self, options):
+        amazonSes = AmazonSES(app.config['AWS_KEY_ID'], app.config['AWS_KEY'])
+        message = EmailMessage()
+        message.subject = options['subject']
+        message.bodyText = options['body']
+        result = amazonSes.sendEmail(options['from'], options['to'], message)
+        return {
+            'message_id': result.messageId
+        }

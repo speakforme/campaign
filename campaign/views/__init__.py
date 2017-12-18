@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from flask import request, abort, url_for
+from flask import request, abort, url_for, Response
 import os
 import json
 from coaster.views import load_models
@@ -9,59 +9,11 @@ from campaign import app
 from redis import Redis
 from rq import Queue
 from campaign.models import db, IncomingMessage, OutgoingMessage, Subscriber, Subscription, Campaign, AutoResponder, RESPONDER_FREQUENCY
-from campaign.extapi.ses import AmazonSES, EmailMessage
+from campaign.extapi.ses import SES
+from campaign.extapi.postal import Postal
+from .utils import check_api_access, requires_auth, csv_response
 
 queue = Queue('campaign', connection=Redis())
-
-class SES(object):
-    def send(self, options):
-        amazonSes = AmazonSES(app.config['AWS_KEY_ID'], app.config['AWS_KEY'])
-        message = EmailMessage()
-        message.subject = options['subject']
-        message.bodyText = options['body']
-        result = amazonSes.sendEmail(options['from'], options['to'], message)
-        return {
-            'message_id': result.messageId
-        }
-        
-
-class Postal(object):
-    def __init__(self, key, base_url):
-        self.key = key
-        self.base_url = base_url
-
-    def receive(self, request):
-        email = json.loads(request.data)
-        return {
-            'from_address': email['mail_from'],
-            'to_address': email['rcpt_to'],
-            'subject': email['subject'],
-            'body': email['plain_body'],
-            'body_html': email['html_body'],
-            'headers': "",
-            'message_id': email['message_id']
-        }
-
-    def send(self, options):
-        url = "{base_url}/api/v1/send/message".format(base_url=self.base_url)
-        payload = {
-            'to': [options['to']],
-            'from': options['from'],
-            'subject': options['subject'],
-            'plain_body': options['body'],
-            'headers': options.get('headers', {}),
-            'cc': options.get('cc', []),
-            'bcc': options.get('bcc', []),
-            'reply_to': options.get('reply_to', '')
-        }
-        headers = {
-            'X-Server-API-Key': "{key}".format(key=self.key),
-            'content-type': "application/json"
-        }
-        resp = requests.post(url, data=payload, headers=headers)
-        return {
-            'message_id': resp.messageId
-        }
 
 
 def extract_campaign_name(email):
@@ -85,12 +37,6 @@ def process_outgoing_message(options):
         messageid=sent_details['message_id'])
     db.session.add(sent_msg)
     db.session.commit()
-
-
-def check_api_access(source, claim):
-    """Aborts if a request does not have the correct api_token"""
-    if not claim or claim != source:
-        abort(401)
 
 
 @app.route('/')
@@ -133,6 +79,7 @@ def inbox(api_token):
             else:
                 active_subscription = True
 
+        # TODO: check and update subscription on sendy
         if not active_subscription:
             responders = AutoResponder.query.filter(AutoResponder.campaign == campaign,
                 AutoResponder.frequency == RESPONDER_FREQUENCY.FIRST_TIME).all()
@@ -159,7 +106,19 @@ def unsubscribe(subscription):
     if subscription.active:
         subscription.active = False
     db.session.commit()
+    # TODO: update subscription on sendy
     campaign = subscription.campaign
     if campaign.unsubscribe_msg:
         return campaign.unsubscribe_msg
     return "You have been unsubscibed from `{campaign}` campaign.".format(campaign=subscription.campaign.title)
+
+
+@app.route('/api/1/subscribers')
+@requires_auth
+def subscribers():
+    subs = Subscriber.query.join(Subscription).filter(Subscription.active is True)
+    headers = ['email']
+    rows = []
+    for sub in subs:
+        rows.append({'email': sub.email})
+    return csv_response(headers, rows, row_type='dict')
